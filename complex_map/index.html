@@ -1,0 +1,251 @@
+<html>
+    <head>
+        <script id="shader-vs" type="x-shader/x-vertex">
+            attribute highp vec2 aVertexPosition;
+            
+            varying highp vec2 vPosition;
+            
+            uniform highp float uAspectRatio;
+            
+            void main(void) {
+                vPosition = vec2(aVertexPosition.x * uAspectRatio, aVertexPosition.y);
+                gl_Position = vec4(aVertexPosition,0,1);
+            }
+        </script>
+        
+        <script id="shader-fs" type="x-shader/x-fragment">
+            
+            highp vec2 conjugate(highp vec2 z){
+                return vec2(z.x, -z.y);
+            }
+            
+            highp vec2 mul(highp vec2 z1, highp vec2 z2){
+                return vec2(z1.x * z2.x - z1.y * z2.y, z1.y * z2.x + z1.x * z2.y);
+            }
+        
+            highp vec2 div(highp vec2 n, highp vec2 d){
+                
+                highp float denominator = d.x * d.x + d.y * d.y;
+                
+                if(denominator > 0.0){
+                    return mul(n, conjugate(d)) / denominator;
+                }else{
+                    return vec2(0,0);
+                }
+            }
+        
+            varying highp vec2 vPosition;
+            
+            uniform highp float uTime;
+            uniform sampler2D uTexture;
+            uniform highp vec2 uPole1;
+            uniform highp vec2 uPole2;
+            uniform highp vec2 uRoot1;
+            uniform highp vec2 uRoot2;
+        
+            void main(void) {
+                
+                highp vec2 z = vPosition;
+                
+                highp vec2 num = mul(z - uRoot1, z - uRoot2);
+                highp vec2 den = mul(z - uPole1, z - uPole2);
+               
+                highp vec4 color = texture2D(uTexture, div(num, den) + vec2(0, uTime));
+ 
+                gl_FragColor.rgb = sin(color.rgb * 2.0 * 3.14 + vec3(23.0 * uTime, 29.0 * uTime, 31.0 * uTime)) * 0.5 + 0.5;
+		gl_FragColor.a = 1.0;
+            }
+        </script>
+        
+        <script type="text/javascript">
+            
+        var canvas;
+        var gl;
+        
+        var verticesBuffer;
+        var texture;
+        
+        var shaderProgram;
+        var vertexPositionAttribute;
+        
+        var startTime;
+        var textureReady;
+        
+        function time(){
+            if(startTime == null){
+                startTime = (new Date()).getTime();
+            }
+            return (new Date()).getTime() - startTime;
+        }
+        
+        function start() {
+            textureReady = false;
+            
+            canvas = document.getElementById("glcanvas");
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            
+            initWebGL(canvas);
+            
+            if (gl) {
+                gl.clearColor(0.0, 0.0, 0.0, 1.0);
+                gl.disable(gl.DEPTH_TEST);
+                
+                initShaders();
+                initBuffers();
+                initTextures();
+                
+                setInterval(drawScene, 15);
+            }
+        }
+        
+        function initWebGL() {
+            
+            gl = canvas.getContext("webgl");
+            
+            if (!gl) {
+                alert("Unable to initialize WebGL. Your browser may not support it.");
+            }
+        }
+        
+        function initBuffers() {
+            
+            verticesBuffer = gl.createBuffer();
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, verticesBuffer);
+            
+            var vertices = [
+                            -1.0, -1.0,
+                            1.0, -1.0,
+                            1.0,  1.0,
+                            
+                            -1.0, -1.0,
+                            -1.0,  1.0,
+                            1.0,  1.0
+                            ];
+                            
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+        }
+        
+        function initTextures() {
+            texture = gl.createTexture();
+            cubeImage = new Image();
+            cubeImage.onload = function() { handleTextureLoaded(cubeImage, texture); }
+            cubeImage.src = "shit.png";
+        }
+        
+        function handleTextureLoaded(image, texture) {
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, image);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_NEAREST);
+            gl.generateMipmap(gl.TEXTURE_2D);
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            
+            textureReady = true;
+        }
+        
+        function drawScene() {
+            if(textureReady != true){
+                return;
+            }
+            
+            gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, verticesBuffer);
+            
+            gl.enableVertexAttribArray(vertexPositionAttribute);
+            gl.vertexAttribPointer(gl.getAttribLocation(shaderProgram, "aVertexPosition"), 2, gl.FLOAT, false, 0, 0);
+            
+            gl.activeTexture(gl.TEXTURE0);
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.uniform1i(gl.getUniformLocation(shaderProgram, "uTexture"), 0);
+            gl.uniform1f(gl.getUniformLocation(shaderProgram, "uAspectRatio"), window.innerWidth / window.innerHeight);
+            
+            var t = time() / 1000.0;
+            gl.uniform1f(gl.getUniformLocation(shaderProgram, "uTime"), t * 0.1);
+            
+            var radius1 = 1 * Math.sin(0.05 * t * Math.PI * 2);
+            var center1X = radius1 * Math.cos(0.1 * t * Math.PI * 2);
+            var center1Y = radius1 * Math.sin(0.1 * t * Math.PI * 2);
+            
+            var freq1 = 0.1;
+            var distance1 = 0.1 * Math.sin(0.05 * t * Math.PI * 2) + 0.15;
+            var pole1X = center1X + 0.5 * distance1 * Math.cos(freq1 * t * Math.PI * 2);
+            var pole1Y = center1Y + 0.5 * distance1 * Math.sin(freq1 * t * Math.PI * 2);
+            var root1X = center1X - 0.5 * distance1 * Math.cos(freq1 * t * Math.PI * 2);
+            var root1Y = center1Y - 0.5 * distance1 * Math.sin(freq1 * t * Math.PI * 2);
+            
+            var radius2 = 0.75 * Math.sin(0.1 * t * Math.PI * 2);
+            var center2X = radius2 * Math.cos(-0.2 * t * Math.PI * 2);
+            var center2Y = radius2 * Math.sin(-0.2 * t * Math.PI * 2);
+            
+            var freq2 = -0.1;
+            var distance2 = 0.1 * Math.sin(0.15 * t * Math.PI * 2) + 0.15;
+            var pole2X = center2X + 0.5 * distance2 * Math.cos(freq2 * t * Math.PI * 2);
+            var pole2Y = center2Y + 0.5 * distance2 * Math.sin(freq2 * t * Math.PI * 2);
+            var root2X = center2X - 0.5 * distance2 * Math.cos(freq2 * t * Math.PI * 2);
+            var root2Y = center2Y - 0.5 * distance2 * Math.sin(freq2 * t * Math.PI * 2);
+            
+            gl.uniform2f(gl.getUniformLocation(shaderProgram, "uPole1"), pole1X, pole1Y);
+            gl.uniform2f(gl.getUniformLocation(shaderProgram, "uPole2"), pole2X, pole2Y);
+            gl.uniform2f(gl.getUniformLocation(shaderProgram, "uRoot1"), root1X, root1Y);
+            gl.uniform2f(gl.getUniformLocation(shaderProgram, "uRoot2"), root2X, root2Y);
+            
+            gl.drawArrays(gl.TRIANGLES, 0, 6);
+        }
+        
+        function initShaders() {
+            var fragmentShader = getShader(gl, "shader-fs");
+            var vertexShader = getShader(gl, "shader-vs");
+            
+            shaderProgram = gl.createProgram();
+            gl.attachShader(shaderProgram, vertexShader);
+            gl.attachShader(shaderProgram, fragmentShader);
+            gl.linkProgram(shaderProgram);
+            
+            if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS)) {
+                alert("Unable to initialize the shader program.");
+            }
+            
+            gl.useProgram(shaderProgram);
+        }
+        
+        function getShader(gl, id) {
+            var shaderScript = document.getElementById(id);
+            
+            if (!shaderScript) {
+                alert("No shader for id: " + id);
+                return null;
+            }
+            
+            var shader;
+            
+            if (shaderScript.type == "x-shader/x-fragment") {
+                shader = gl.createShader(gl.FRAGMENT_SHADER);
+            } else if (shaderScript.type == "x-shader/x-vertex") {
+                shader = gl.createShader(gl.VERTEX_SHADER);
+            } else {
+                alert("Unknown shader type: " + shaderScript.type);
+                return null;
+            }
+            
+            gl.shaderSource(shader, shaderScript.textContent);
+            gl.compileShader(shader);
+            
+            if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+                alert("An error occurred compiling the shaders: " + gl.getShaderInfoLog(shader));
+                return null;
+            }
+            
+            return shader;
+        }
+            
+        </script>
+        
+    </head>
+    
+    <body onload="start()" style="padding:0;margin:0">
+        <canvas id="glcanvas">Enable WebGL</canvas>
+    </body>
+</html>
